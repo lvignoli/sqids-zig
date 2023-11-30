@@ -134,7 +134,79 @@ test "encode incremental numbers" {
         const got = try encode(allocator, ids.get(k.*).?, default_alphabet);
         defer allocator.free(got);
         try testing.expectEqualStrings(k.*, got);
+
+        const got_numbers = try decode(allocator, k.*, default_alphabet);
+        defer allocator.free(got_numbers);
+        try testing.expectEqualSlices(u64, ids.get(k.*).?, got_numbers);
     }
+}
+
+/// decode decodes id into numbers using alphabet.
+pub fn decode(allocator: mem.Allocator, to_decode_id: []const u8, decoding_alphabet: []const u8) ![]const u64 {
+    const alphabet = try allocator.alloc(u8, decoding_alphabet.len);
+    defer allocator.free(alphabet);
+    @memcpy(alphabet, decoding_alphabet);
+    shuffle(alphabet);
+
+    var id = to_decode_id[0..];
+
+    if (id.len == 0) {
+        return &.{};
+    }
+
+    // If a character is not in the alphabet, return an empty array.
+    for (id) |c| {
+        if (mem.indexOfScalar(u8, id, c) == null) {
+            return &.{};
+        }
+    }
+
+    const prefix = id[0];
+    const offset = mem.indexOfScalar(u8, alphabet, prefix).?; // unreachable since caught above
+
+    mem.rotate(u8, alphabet, offset);
+
+    mem.reverse(u8, alphabet);
+
+    id = id[1..];
+
+    var ret = ArrayList(u64).init(allocator);
+    defer ret.deinit();
+
+    while (id.len > 0) {
+        const separator = alphabet[0];
+
+        // We need the first part to the left of the separator to decode the number.
+        // If there is no separator, we take the whole string.
+        const i = mem.indexOfScalar(u8, id, separator) orelse id.len;
+        const left = id[0..i];
+        const right = if (i == id.len) "" else id[i + 1 ..];
+
+        // If empty, we are done (the rest is junk characters).
+        if (left.len == 0) {
+            return try ret.toOwnedSlice();
+        }
+
+        const alphabet_without_separator = alphabet[1..];
+        try ret.append(toNumber(left, alphabet_without_separator));
+
+        // If there is still numbers to decode from the ID, shuffle the alphabet.
+        if (right.len > 0) {
+            shuffle(alphabet);
+        }
+
+        // Keep the part to the right of the first separator for the next iteration.
+        id = right;
+    }
+
+    return try ret.toOwnedSlice();
+}
+
+test "decode" {
+    const allocator = testing.allocator;
+    const numbers = try decode(allocator, "489158", "0123456789abcdef");
+    defer allocator.free(numbers);
+    try testing.expectEqualSlices(u64, &.{ 1, 2, 3 }, numbers);
 }
 
 // toID generates a new ID string for number using alphabet.
