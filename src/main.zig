@@ -12,9 +12,9 @@ pub fn encode(allocator: mem.Allocator, numbers: []const u64, alphabet: []const 
         return "";
     }
 
-    var increment: u64 = 0;
+    const increment: u64 = 0;
 
-    var encoding_alphabet = try allocator.alloc(u8, alphabet.len);
+    const encoding_alphabet = try allocator.alloc(u8, alphabet.len);
     defer allocator.free(encoding_alphabet);
     @memcpy(encoding_alphabet, alphabet);
     shuffle(encoding_alphabet);
@@ -149,10 +149,10 @@ fn toID(allocator: mem.Allocator, number: u64, alphabet: []const u8) ![]const u8
         if (result == 0) break;
     }
 
-    var value: []u8 = try id.toOwnedSlice();
+    const value: []u8 = try id.toOwnedSlice();
 
     // In the reference implementation, the letters are inserted at index 0.
-    // Here we append them for efficiency, so we revert in the end.
+    // Here we append them for efficiency, so we reverse the ID at the end.
     mem.reverse(u8, value);
 
     return value;
@@ -250,7 +250,7 @@ test "shuffle" {
     };
 
     for (cases) |case| {
-        var alphabet = try allocator.alloc(u8, case.input.len);
+        const alphabet = try allocator.alloc(u8, case.input.len);
         defer allocator.free(alphabet);
 
         @memcpy(alphabet, case.input);
