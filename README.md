@@ -6,15 +6,15 @@
 4. Add tests to consolidate.
 5. Support min length,
 6. Support a blocklist,
+7. Notify Sqids stewardship,
 
 #### Ongoing
 
-7. Notify Sqids stewardship,
 8. Tidy and zigify,
-
-#### After
-
 9. Remove (or add) comments about implementation,
 10. Bundle as a friendly library,
 11. Have well-defined errors,
+
+#### After
+
 12. Make test suite on par with specs.
