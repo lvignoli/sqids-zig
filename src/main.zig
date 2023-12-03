@@ -6,8 +6,14 @@ const ArrayList = std.ArrayList;
 
 const default_alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
+const Options = struct {
+    min_length: u8 = 0,
+    blocklist: []const []const u8 = &.{},
+    // alphabet: []const u8,
+};
+
 ///encode encodes a list of numbers into a sqids ID.
-pub fn encode(allocator: mem.Allocator, numbers: []const u64, alphabet: []const u8) ![]const u8 {
+pub fn encode(allocator: mem.Allocator, numbers: []const u64, alphabet: []const u8, options: Options) ![]const u8 {
     if (numbers.len == 0) {
         return "";
     }
@@ -19,10 +25,45 @@ pub fn encode(allocator: mem.Allocator, numbers: []const u64, alphabet: []const 
     @memcpy(encoding_alphabet, alphabet);
     shuffle(encoding_alphabet);
 
-    return try encodeNumbers(allocator, numbers, encoding_alphabet, increment);
+    // Clean up blocklist
+    // 1. all blocklist words should be lowercase
+    // 2. no words less than 3 chars
+    // 3. if some words contain chars that are not in the alphabet, remove those
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+
+    var filtered_blocklist = ArrayList([]const u8).init(allocator);
+    for (options.blocklist) |word| {
+        if (word.len < 3) {
+            continue;
+        }
+        const lowercased_word = try std.ascii.allocLowerString(arena_allocator, word);
+        if (!validInAlphabet(lowercased_word, alphabet)) {
+            continue;
+        }
+        try filtered_blocklist.append(lowercased_word);
+    }
+
+    const blocklist = try filtered_blocklist.toOwnedSlice();
+    defer allocator.free(blocklist);
+
+    return try encodeNumbers(allocator, numbers, encoding_alphabet, increment, options.min_length, blocklist);
 }
 
-fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, alphabet: []u8, increment: u64) ![]const u8 {
+inline fn validInAlphabet(word: []const u8, alphabet: []const u8) bool {
+    for (word) |c| {
+        if (mem.indexOf(u8, alphabet, &.{c}) == null) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, original_alphabet: []u8, increment: u64, min_length: u64, blocklist: []const []const u8) ![]u8 {
+    var alphabet = try allocator.dupe(u8, original_alphabet);
+    defer allocator.free(alphabet);
+
     if (increment > alphabet.len) {
         return error.ReachedMaxAttempts;
     }
@@ -62,13 +103,59 @@ fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, alphabet: []u8,
         }
     }
 
-    const id = try ret.toOwnedSlice();
+    // Handle min_length requirements.
+    if (min_length > ret.items.len) {
+        try ret.append(alphabet[0]);
+        while (min_length > ret.items.len) {
+            shuffle(alphabet);
+            const n = @min(min_length - ret.items.len, alphabet.len);
+            try ret.appendSlice(alphabet[0..n]);
+        }
+    }
+
+    var id = try ret.toOwnedSlice();
 
     // Not yet implemented:
-    // - min length check and growing
     // - blocked id collisions and retry with increment
-
+    const blocked = try isBlockedID(allocator, blocklist, id);
+    if (blocked) {
+        allocator.free(id);
+        id = try encodeNumbers(allocator, numbers, original_alphabet, increment + 1, min_length, blocklist);
+    }
     return id;
+}
+
+fn isBlockedID(allocator: mem.Allocator, blocklist: []const []const u8, id: []const u8) !bool {
+    const lower_id = try std.ascii.allocLowerString(allocator, id);
+    defer allocator.free(lower_id);
+
+    for (blocklist) |word| {
+        if (word.len > lower_id.len) {
+            continue;
+        }
+        if (lower_id.len <= 3 or word.len <= 3) {
+            if (mem.eql(u8, id, word)) {
+                return true;
+            }
+        } else if (containsNumber(word)) {
+            if (mem.startsWith(u8, lower_id, word) or mem.endsWith(u8, lower_id, word)) {
+                return true;
+            }
+        } else if (mem.indexOf(u8, lower_id, word)) |_| {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn containsNumber(s: []const u8) bool {
+    for (s) |c| {
+        if (std.ascii.isDigit(c)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 test "encode" {
@@ -94,7 +181,7 @@ test "encode" {
     };
 
     for (cases) |case| {
-        const id = try encode(allocator, case.numbers, case.alphabet);
+        const id = try encode(allocator, case.numbers, case.alphabet, .{});
         defer allocator.free(id);
         try testing.expectEqualStrings(case.expected, id);
     }
@@ -131,7 +218,7 @@ test "encode incremental numbers" {
 
     var iterator = ids.keyIterator();
     while (iterator.next()) |k| {
-        const got = try encode(allocator, ids.get(k.*).?, default_alphabet);
+        const got = try encode(allocator, ids.get(k.*).?, default_alphabet, .{});
         defer allocator.free(got);
         try testing.expectEqualStrings(k.*, got);
 
@@ -139,6 +226,56 @@ test "encode incremental numbers" {
         defer allocator.free(got_numbers);
         try testing.expectEqualSlices(u64, ids.get(k.*).?, got_numbers);
     }
+}
+
+test "min length: incremental numbers" {
+    const numbers = [_]u64{ 1, 2, 3 };
+
+    const allocator = testing.allocator;
+    var ids = std.AutoHashMap(u8, []const u8).init(allocator);
+    defer ids.deinit();
+
+    // Simple.
+    try ids.put(default_alphabet.len, "86Rf07xd4zBmiJXQG6otHEbew02c3PWsUOLZxADhCpKj7aVFv9I8RquYrNlSTM");
+    // Incremental.
+    try ids.put(6, "86Rf07");
+    try ids.put(7, "86Rf07x");
+    try ids.put(8, "86Rf07xd");
+    try ids.put(9, "86Rf07xd4");
+    try ids.put(10, "86Rf07xd4z");
+    try ids.put(11, "86Rf07xd4zB");
+    try ids.put(12, "86Rf07xd4zBm");
+    try ids.put(13, "86Rf07xd4zBmi");
+
+    var it = ids.iterator();
+    while (it.next()) |entry| {
+        const k = entry.key_ptr.*;
+        const v = entry.value_ptr.*;
+
+        const got = try encode(allocator, &numbers, default_alphabet, .{
+            .min_length = k,
+        });
+        defer allocator.free(got);
+        try testing.expectEqualStrings(v, got);
+        try testing.expect(got.len >= k);
+
+        const decoded = try decode(allocator, got, default_alphabet);
+        defer allocator.free(decoded);
+        try testing.expectEqualSlices(u64, &numbers, decoded);
+    }
+}
+
+test "non-empty blocklist" {
+    const blocklist: []const []const u8 = &.{"ArUO"};
+    const allocator = testing.allocator;
+
+    const got_numbers = try decode(allocator, "ArUO", default_alphabet);
+    defer allocator.free(got_numbers);
+    try testing.expectEqualSlices(u64, &.{100000}, got_numbers);
+
+    const got_id = try encode(allocator, &.{100000}, default_alphabet, .{ .blocklist = blocklist });
+    defer allocator.free(got_id);
+    try testing.expectEqualStrings("QyG4", got_id);
 }
 
 /// decode decodes id into numbers using alphabet.
