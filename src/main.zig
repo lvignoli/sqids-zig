@@ -9,10 +9,9 @@ const default_alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01
 const Options = struct {
     min_length: u8 = 0,
     blocklist: []const []const u8 = &.{},
-    // alphabet: []const u8,
 };
 
-///encode encodes a list of numbers into a sqids ID.
+/// encode encodes a list of numbers into a sqids ID.
 pub fn encode(allocator: mem.Allocator, numbers: []const u64, alphabet: []const u8, options: Options) ![]const u8 {
     if (numbers.len == 0) {
         return "";
@@ -20,15 +19,14 @@ pub fn encode(allocator: mem.Allocator, numbers: []const u64, alphabet: []const 
 
     const increment: u64 = 0;
 
-    const encoding_alphabet = try allocator.alloc(u8, alphabet.len);
+    const encoding_alphabet = try allocator.dupe(u8, alphabet);
     defer allocator.free(encoding_alphabet);
-    @memcpy(encoding_alphabet, alphabet);
     shuffle(encoding_alphabet);
 
-    // Clean up blocklist
-    // 1. all blocklist words should be lowercase
-    // 2. no words less than 3 chars
-    // 3. if some words contain chars that are not in the alphabet, remove those
+    // Clean up blocklist:
+    // 1. all blocklist words should be lowercase,
+    // 2. no words less than 3 chars,
+    // 3. if some words contain chars that are not in the alphabet, remove those.
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const arena_allocator = arena.allocator();
@@ -60,7 +58,7 @@ inline fn validInAlphabet(word: []const u8, alphabet: []const u8) bool {
     return true;
 }
 
-fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, original_alphabet: []u8, increment: u64, min_length: u64, blocklist: []const []const u8) ![]u8 {
+fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, original_alphabet: []const u8, increment: u64, min_length: u64, blocklist: []const []const u8) ![]u8 {
     var alphabet = try allocator.dupe(u8, original_alphabet);
     defer allocator.free(alphabet);
 
@@ -70,21 +68,19 @@ fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, original_alphab
 
     // Get semi-random offset.
     var offset: u64 = numbers.len;
-
     for (numbers, 0..) |n, i| {
         offset += i;
         offset += alphabet[n % alphabet.len];
     }
-
     offset %= alphabet.len;
     offset = (offset + increment) % alphabet.len;
 
+    // Prefix and alphabet.
     mem.rotate(u8, alphabet, offset);
-
     const prefix = alphabet[0];
-
     mem.reverse(u8, alphabet);
 
+    // Build the ID.
     var ret = ArrayList(u8).init(allocator);
     defer ret.deinit();
 
@@ -113,16 +109,15 @@ fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, original_alphab
         }
     }
 
-    var id = try ret.toOwnedSlice();
+    var ID = try ret.toOwnedSlice();
 
-    // Not yet implemented:
-    // - blocked id collisions and retry with increment
-    const blocked = try isBlockedID(allocator, blocklist, id);
+    // Handle blocklist.
+    const blocked = try isBlockedID(allocator, blocklist, ID);
     if (blocked) {
-        allocator.free(id);
-        id = try encodeNumbers(allocator, numbers, original_alphabet, increment + 1, min_length, blocklist);
+        allocator.free(ID); // Freeing the old ID string.
+        ID = try encodeNumbers(allocator, numbers, original_alphabet, increment + 1, min_length, blocklist);
     }
-    return id;
+    return ID;
 }
 
 fn isBlockedID(allocator: mem.Allocator, blocklist: []const []const u8, id: []const u8) !bool {
@@ -280,9 +275,8 @@ test "non-empty blocklist" {
 
 /// decode decodes id into numbers using alphabet.
 pub fn decode(allocator: mem.Allocator, to_decode_id: []const u8, decoding_alphabet: []const u8) ![]const u64 {
-    const alphabet = try allocator.alloc(u8, decoding_alphabet.len);
+    const alphabet = try allocator.dupe(u8, decoding_alphabet);
     defer allocator.free(alphabet);
-    @memcpy(alphabet, decoding_alphabet);
     shuffle(alphabet);
 
     var id = to_decode_id[0..];
@@ -459,11 +453,8 @@ test "shuffle" {
     };
 
     for (cases) |case| {
-        const alphabet = try allocator.alloc(u8, case.input.len);
+        const alphabet = try allocator.dupe(u8, case.input);
         defer allocator.free(alphabet);
-
-        @memcpy(alphabet, case.input);
-
         shuffle(alphabet);
 
         try testing.expectEqualSlices(u8, case.want, alphabet);
