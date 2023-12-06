@@ -6,7 +6,7 @@ const ArrayList = std.ArrayList;
 
 const default_alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-/// Options control the configuration of the sqid encoder.
+/// Options controls the configuration of the sqid encoder.
 const Options = struct {
     alphabet: []const u8 = default_alphabet,
     min_length: u8 = 0,
