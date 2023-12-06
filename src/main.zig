@@ -7,21 +7,22 @@ const ArrayList = std.ArrayList;
 const default_alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 const Options = struct {
+    alphabet: []const u8 = default_alphabet,
     min_length: u8 = 0,
     blocklist: []const []const u8 = &.{},
 };
 
 /// encode encodes a list of numbers into a sqids ID.
-pub fn encode(allocator: mem.Allocator, numbers: []const u64, alphabet: []const u8, options: Options) ![]const u8 {
+pub fn encode(allocator: mem.Allocator, numbers: []const u64, options: Options) ![]const u8 {
     if (numbers.len == 0) {
         return "";
     }
 
     const increment: u64 = 0;
 
-    const encoding_alphabet = try allocator.dupe(u8, alphabet);
-    defer allocator.free(encoding_alphabet);
-    shuffle(encoding_alphabet);
+    const alphabet = try allocator.dupe(u8, options.alphabet);
+    defer allocator.free(alphabet);
+    shuffle(alphabet);
 
     // Clean up blocklist:
     // 1. all blocklist words should be lowercase,
@@ -46,7 +47,7 @@ pub fn encode(allocator: mem.Allocator, numbers: []const u64, alphabet: []const 
     const blocklist = try filtered_blocklist.toOwnedSlice();
     defer allocator.free(blocklist);
 
-    return try encodeNumbers(allocator, numbers, encoding_alphabet, increment, options.min_length, blocklist);
+    return try encodeNumbers(allocator, numbers, alphabet, increment, options.min_length, blocklist);
 }
 
 inline fn validInAlphabet(word: []const u8, alphabet: []const u8) bool {
@@ -176,7 +177,7 @@ test "encode" {
     };
 
     for (cases) |case| {
-        const id = try encode(allocator, case.numbers, case.alphabet, .{});
+        const id = try encode(allocator, case.numbers, .{ .alphabet = case.alphabet });
         defer allocator.free(id);
         try testing.expectEqualStrings(case.expected, id);
     }
@@ -213,7 +214,7 @@ test "encode incremental numbers" {
 
     var iterator = ids.keyIterator();
     while (iterator.next()) |k| {
-        const got = try encode(allocator, ids.get(k.*).?, default_alphabet, .{});
+        const got = try encode(allocator, ids.get(k.*).?, .{ .alphabet = default_alphabet });
         defer allocator.free(got);
         try testing.expectEqualStrings(k.*, got);
 
@@ -247,9 +248,7 @@ test "min length: incremental numbers" {
         const k = entry.key_ptr.*;
         const v = entry.value_ptr.*;
 
-        const got = try encode(allocator, &numbers, default_alphabet, .{
-            .min_length = k,
-        });
+        const got = try encode(allocator, &numbers, .{ .alphabet = default_alphabet, .min_length = k });
         defer allocator.free(got);
         try testing.expectEqualStrings(v, got);
         try testing.expect(got.len >= k);
@@ -268,7 +267,7 @@ test "non-empty blocklist" {
     defer allocator.free(got_numbers);
     try testing.expectEqualSlices(u64, &.{100000}, got_numbers);
 
-    const got_id = try encode(allocator, &.{100000}, default_alphabet, .{ .blocklist = blocklist });
+    const got_id = try encode(allocator, &.{100000}, .{ .alphabet = default_alphabet, .blocklist = blocklist });
     defer allocator.free(got_id);
     try testing.expectEqualStrings("QyG4", got_id);
 }
