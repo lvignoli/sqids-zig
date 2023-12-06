@@ -1,9 +1,11 @@
+/// Module sqids-zig implements encoding and decoding of sqids identifiers. See sqids.org.
 const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
 
 const ArrayList = std.ArrayList;
 
+/// The default alphabet for sqids.
 const default_alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 /// Options controls the configuration of the sqid encoder.
@@ -15,6 +17,8 @@ const Options = struct {
 
 /// encode encodes a list of numbers into a sqids ID.
 pub fn encode(allocator: mem.Allocator, numbers: []const u64, options: Options) ![]const u8 {
+    // TODO(lvignoli): preprocessing of alphabet and blocklist should happen once, not at every call of encode.
+    // Create a Sqids struct to initialize once.
     if (numbers.len == 0) {
         return "";
     }
@@ -225,9 +229,8 @@ pub fn decode(
 
 // toID generates a new ID string for number using alphabet.
 fn toID(allocator: mem.Allocator, number: u64, alphabet: []const u8) ![]const u8 {
-    // NOTE(lvignoli): In the reference implementation, the letters are inserted
-    // at index 0. Here we append them for efficiency, so we reverse the ID at
-    // the end.
+    // NOTE(lvignoli): In the reference implementation, the letters are inserted at index 0.
+    // Here we append them for efficiency, so we reverse the ID at the end.
     var result: u64 = number;
     var id = std.ArrayList(u8).init(allocator);
 
@@ -254,8 +257,8 @@ fn toNumber(s: []const u8, alphabet: []const u8) u64 {
     return num;
 }
 
-/// Shuffle shuffles inplace the given alphabet. It is consistent: it produces
-/// the same result given the input.
+/// Shuffle shuffles inplace the given alphabet.
+/// It is consistent: it produces / the same result given the input.
 fn shuffle(alphabet: []u8) void {
     const n = alphabet.len;
 
@@ -270,7 +273,9 @@ fn shuffle(alphabet: []u8) void {
     }
 }
 
+//
 // Encoding and decoding tests start from here.
+//
 
 test "encode" {
     const allocator = testing.allocator;
