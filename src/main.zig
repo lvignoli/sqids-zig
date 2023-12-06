@@ -55,7 +55,7 @@ pub fn encode(allocator: mem.Allocator, numbers: []const u64, options: Options) 
     return try encodeNumbers(allocator, numbers, alphabet, increment, options.min_length, blocklist);
 }
 
-inline fn validInAlphabet(word: []const u8, alphabet: []const u8) bool {
+fn validInAlphabet(word: []const u8, alphabet: []const u8) bool {
     for (word) |c| {
         if (mem.indexOf(u8, alphabet, &.{c}) == null) {
             return false;
@@ -157,7 +157,7 @@ fn isBlockedID(allocator: mem.Allocator, blocklist: []const []const u8, id: []co
     return false;
 }
 
-inline fn containsNumber(s: []const u8) bool {
+fn containsNumber(s: []const u8) bool {
     for (s) |c| {
         if (std.ascii.isDigit(c)) {
             return true;
