@@ -401,7 +401,6 @@ test "shuffle" {
 
     const cases = [_]TestCase{
         // Default shuffle, checking for randomness.
-        // Default shuffle, checking for randomness.
         .{
             .input = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
             .want = "fwjBhEY2uczNPDiloxmvISCrytaJO4d71T0W3qnMZbXVHg6eR8sAQ5KkpLUGF9",
