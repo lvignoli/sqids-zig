@@ -6,6 +6,7 @@ const ArrayList = std.ArrayList;
 
 const default_alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
+/// Options control the configuration of the sqid encoder.
 const Options = struct {
     alphabet: []const u8 = default_alphabet,
     min_length: u8 = 0,
@@ -120,6 +121,7 @@ fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, original_alphab
     return ID;
 }
 
+/// isBlockedID returns true if id collides with the blocklist.
 fn isBlockedID(allocator: mem.Allocator, blocklist: []const []const u8, id: []const u8) !bool {
     const lower_id = try std.ascii.allocLowerString(allocator, id);
     defer allocator.free(lower_id);
@@ -144,7 +146,7 @@ fn isBlockedID(allocator: mem.Allocator, blocklist: []const []const u8, id: []co
     return false;
 }
 
-fn containsNumber(s: []const u8) bool {
+inline fn containsNumber(s: []const u8) bool {
     for (s) |c| {
         if (std.ascii.isDigit(c)) {
             return true;
@@ -273,17 +275,17 @@ test "non-empty blocklist" {
 
 /// decode decodes id into numbers using alphabet.
 pub fn decode(allocator: mem.Allocator, to_decode_id: []const u8, decoding_alphabet: []const u8) ![]const u64 {
-    const alphabet = try allocator.dupe(u8, decoding_alphabet);
-    defer allocator.free(alphabet);
-    shuffle(alphabet);
-
     var id = to_decode_id[0..];
-
     if (id.len == 0) {
         return &.{};
     }
 
+    const alphabet = try allocator.dupe(u8, decoding_alphabet);
+    defer allocator.free(alphabet);
+    shuffle(alphabet);
+
     // If a character is not in the alphabet, return an empty array.
+    // TODO(lvignoli): here we could return an informative error. Check if fine with specs.
     for (id) |c| {
         if (mem.indexOfScalar(u8, id, c) == null) {
             return &.{};
@@ -291,13 +293,12 @@ pub fn decode(allocator: mem.Allocator, to_decode_id: []const u8, decoding_alpha
     }
 
     const prefix = id[0];
-    const offset = mem.indexOfScalar(u8, alphabet, prefix).?; // unreachable since caught above
-
-    mem.rotate(u8, alphabet, offset);
-
-    mem.reverse(u8, alphabet);
-
     id = id[1..];
+
+    const offset = mem.indexOfScalar(u8, alphabet, prefix).?;
+    // NOTE(l.vignoli): We can unwrap safely since all characters are in alphabet.
+    mem.rotate(u8, alphabet, offset);
+    mem.reverse(u8, alphabet);
 
     var ret = ArrayList(u64).init(allocator);
     defer ret.deinit();
@@ -307,7 +308,7 @@ pub fn decode(allocator: mem.Allocator, to_decode_id: []const u8, decoding_alpha
 
         // We need the first part to the left of the separator to decode the number.
         // If there is no separator, we take the whole string.
-        const i = mem.indexOfScalar(u8, id, separator) orelse id.len;
+        const i = mem.indexOfScalar(u8, id, separator) orelse id.len; // TODO: refactor.
         const left = id[0..i];
         const right = if (i == id.len) "" else id[i + 1 ..];
 
@@ -316,8 +317,7 @@ pub fn decode(allocator: mem.Allocator, to_decode_id: []const u8, decoding_alpha
             return try ret.toOwnedSlice();
         }
 
-        const alphabet_without_separator = alphabet[1..];
-        try ret.append(toNumber(left, alphabet_without_separator));
+        try ret.append(toNumber(left, alphabet[1..]));
 
         // If there is still numbers to decode from the ID, shuffle the alphabet.
         if (right.len > 0) {
