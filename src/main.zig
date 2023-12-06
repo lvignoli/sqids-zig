@@ -186,51 +186,56 @@ test "encode" {
 
 test "encode incremental numbers" {
     const allocator = testing.allocator;
-    var ids = std.StringHashMap([]const u64).init(allocator);
-    defer ids.deinit();
+    var cases = std.StringHashMap([]const u64).init(allocator);
+    defer cases.deinit();
 
     // Incremental numbers.
-    try ids.put("bM", &.{0});
-    try ids.put("Uk", &.{1});
-    try ids.put("gb", &.{2});
-    try ids.put("Ef", &.{3});
-    try ids.put("Vq", &.{4});
-    try ids.put("uw", &.{5});
-    try ids.put("OI", &.{6});
-    try ids.put("AX", &.{7});
-    try ids.put("p6", &.{8});
-    try ids.put("nJ", &.{9});
+    try cases.put("bM", &.{0});
+    try cases.put("Uk", &.{1});
+    try cases.put("gb", &.{2});
+    try cases.put("Ef", &.{3});
+    try cases.put("Vq", &.{4});
+    try cases.put("uw", &.{5});
+    try cases.put("OI", &.{6});
+    try cases.put("AX", &.{7});
+    try cases.put("p6", &.{8});
+    try cases.put("nJ", &.{9});
 
     // Incremental number, same index zero.
-    try ids.put("SvIz", &.{ 0, 0 });
-    try ids.put("n3qa", &.{ 0, 1 });
-    try ids.put("tryF", &.{ 0, 2 });
-    try ids.put("eg6q", &.{ 0, 3 });
-    try ids.put("rSCF", &.{ 0, 4 });
-    try ids.put("sR8x", &.{ 0, 5 });
-    try ids.put("uY2M", &.{ 0, 6 });
-    try ids.put("74dI", &.{ 0, 7 });
-    try ids.put("30WX", &.{ 0, 8 });
-    try ids.put("moxr", &.{ 0, 9 });
+    try cases.put("SvIz", &.{ 0, 0 });
+    try cases.put("n3qa", &.{ 0, 1 });
+    try cases.put("tryF", &.{ 0, 2 });
+    try cases.put("eg6q", &.{ 0, 3 });
+    try cases.put("rSCF", &.{ 0, 4 });
+    try cases.put("sR8x", &.{ 0, 5 });
+    try cases.put("uY2M", &.{ 0, 6 });
+    try cases.put("74dI", &.{ 0, 7 });
+    try cases.put("30WX", &.{ 0, 8 });
+    try cases.put("moxr", &.{ 0, 9 });
 
-    var iterator = ids.keyIterator();
-    while (iterator.next()) |k| {
-        const got = try encode(allocator, ids.get(k.*).?, .{ .alphabet = default_alphabet });
+    var it = cases.iterator();
+    while (it.next()) |e| {
+        const id = e.key_ptr.*;
+        const numbers = e.value_ptr.*;
+
+        // Test encoding.
+        const got = try encode(allocator, numbers, .{ .alphabet = default_alphabet });
         defer allocator.free(got);
-        try testing.expectEqualStrings(k.*, got);
+        try testing.expectEqualStrings(id, got);
 
-        const got_numbers = try decode(allocator, k.*, default_alphabet);
+        // Test decoding back.
+        const got_numbers = try decode(allocator, id, default_alphabet);
         defer allocator.free(got_numbers);
-        try testing.expectEqualSlices(u64, ids.get(k.*).?, got_numbers);
+        try testing.expectEqualSlices(u64, numbers, got_numbers);
     }
 }
 
 test "min length: incremental numbers" {
-    const numbers = [_]u64{ 1, 2, 3 };
-
     const allocator = testing.allocator;
     var ids = std.AutoHashMap(u8, []const u8).init(allocator);
     defer ids.deinit();
+
+    const numbers = [_]u64{ 1, 2, 3 };
 
     // Simple.
     try ids.put(default_alphabet.len, "86Rf07xd4zBmiJXQG6otHEbew02c3PWsUOLZxADhCpKj7aVFv9I8RquYrNlSTM");
@@ -245,18 +250,20 @@ test "min length: incremental numbers" {
     try ids.put(13, "86Rf07xd4zBmi");
 
     var it = ids.iterator();
-    while (it.next()) |entry| {
-        const k = entry.key_ptr.*;
-        const v = entry.value_ptr.*;
+    while (it.next()) |e| {
+        const k = e.key_ptr.*;
+        const expected_id = e.value_ptr.*;
 
-        const got = try encode(allocator, &numbers, .{ .alphabet = default_alphabet, .min_length = k });
-        defer allocator.free(got);
-        try testing.expectEqualStrings(v, got);
-        try testing.expect(got.len >= k);
+        // Test encoding.
+        const actual_id = try encode(allocator, &numbers, .{ .alphabet = default_alphabet, .min_length = k });
+        defer allocator.free(actual_id);
+        try testing.expectEqualStrings(expected_id, actual_id);
+        try testing.expect(actual_id.len >= k);
 
-        const decoded = try decode(allocator, got, default_alphabet);
-        defer allocator.free(decoded);
-        try testing.expectEqualSlices(u64, &numbers, decoded);
+        // Test decoding back.
+        const actual_numbers = try decode(allocator, actual_id, default_alphabet);
+        defer allocator.free(actual_numbers);
+        try testing.expectEqualSlices(u64, &numbers, actual_numbers);
     }
 }
 
@@ -264,9 +271,9 @@ test "non-empty blocklist" {
     const blocklist: []const []const u8 = &.{"ArUO"};
     const allocator = testing.allocator;
 
-    const got_numbers = try decode(allocator, "ArUO", default_alphabet);
-    defer allocator.free(got_numbers);
-    try testing.expectEqualSlices(u64, &.{100000}, got_numbers);
+    const actual_numbers = try decode(allocator, "ArUO", default_alphabet);
+    defer allocator.free(actual_numbers);
+    try testing.expectEqualSlices(u64, &.{100000}, actual_numbers);
 
     const got_id = try encode(allocator, &.{100000}, .{ .alphabet = default_alphabet, .blocklist = blocklist });
     defer allocator.free(got_id);
