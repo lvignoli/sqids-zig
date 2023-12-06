@@ -61,7 +61,14 @@ inline fn validInAlphabet(word: []const u8, alphabet: []const u8) bool {
 }
 
 /// encodeNumbers performs the actual encoding processing.
-fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, original_alphabet: []const u8, increment: u64, min_length: u64, blocklist: []const []const u8) ![]u8 {
+fn encodeNumbers(
+    allocator: mem.Allocator,
+    numbers: []const u64,
+    original_alphabet: []const u8,
+    increment: u64,
+    min_length: u64,
+    blocklist: []const []const u8,
+) ![]u8 {
     var alphabet = try allocator.dupe(u8, original_alphabet);
     defer allocator.free(alphabet);
 
@@ -281,7 +288,11 @@ test "non-empty blocklist" {
 }
 
 /// decode decodes id into numbers using alphabet.
-pub fn decode(allocator: mem.Allocator, to_decode_id: []const u8, decoding_alphabet: []const u8) ![]const u64 {
+pub fn decode(
+    allocator: mem.Allocator,
+    to_decode_id: []const u8,
+    decoding_alphabet: []const u8,
+) ![]const u64 {
     var id = to_decode_id[0..];
     if (id.len == 0) {
         return &.{};
