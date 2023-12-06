@@ -59,6 +59,7 @@ inline fn validInAlphabet(word: []const u8, alphabet: []const u8) bool {
     return true;
 }
 
+/// encodeNumbers performs the actual encoding processing.
 fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, original_alphabet: []const u8, increment: u64, min_length: u64, blocklist: []const []const u8) ![]u8 {
     var alphabet = try allocator.dupe(u8, original_alphabet);
     defer allocator.free(alphabet);
@@ -88,12 +89,10 @@ fn encodeNumbers(allocator: mem.Allocator, numbers: []const u64, original_alphab
     try ret.append(prefix);
 
     for (numbers, 0..) |n, i| {
-        const alphabetWithoutSeparator = alphabet[1..];
-        const x = try toID(allocator, n, alphabetWithoutSeparator);
+        const x = try toID(allocator, n, alphabet[1..]);
         defer allocator.free(x);
         try ret.appendSlice(x);
 
-        // If it's not the last number:
         if (i < numbers.len - 1) {
             try ret.append(alphabet[0]);
             shuffle(alphabet);
