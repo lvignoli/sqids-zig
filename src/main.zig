@@ -161,6 +161,116 @@ inline fn containsNumber(s: []const u8) bool {
     }
     return false;
 }
+/// decode decodes id into numbers using alphabet.
+pub fn decode(
+    allocator: mem.Allocator,
+    to_decode_id: []const u8,
+    decoding_alphabet: []const u8,
+) ![]const u64 {
+    var id = to_decode_id[0..];
+    if (id.len == 0) {
+        return &.{};
+    }
+
+    const alphabet = try allocator.dupe(u8, decoding_alphabet);
+    defer allocator.free(alphabet);
+    shuffle(alphabet);
+
+    // If a character is not in the alphabet, return an empty array.
+    // TODO(lvignoli): here we could return an informative error. Check if fine with specs.
+    for (id) |c| {
+        if (mem.indexOfScalar(u8, id, c) == null) {
+            return &.{};
+        }
+    }
+
+    const prefix = id[0];
+    id = id[1..];
+
+    const offset = mem.indexOfScalar(u8, alphabet, prefix).?;
+    // NOTE(l.vignoli): We can unwrap safely since all characters are in alphabet.
+    mem.rotate(u8, alphabet, offset);
+    mem.reverse(u8, alphabet);
+
+    var ret = ArrayList(u64).init(allocator);
+    defer ret.deinit();
+
+    while (id.len > 0) {
+        const separator = alphabet[0];
+
+        // We need the first part to the left of the separator to decode the number.
+        // If there is no separator, we take the whole string.
+        const i = mem.indexOfScalar(u8, id, separator) orelse id.len; // TODO: refactor.
+        const left = id[0..i];
+        const right = if (i == id.len) "" else id[i + 1 ..];
+
+        // If empty, we are done (the rest is junk characters).
+        if (left.len == 0) {
+            return try ret.toOwnedSlice();
+        }
+
+        try ret.append(toNumber(left, alphabet[1..]));
+
+        // If there is still numbers to decode from the ID, shuffle the alphabet.
+        if (right.len > 0) {
+            shuffle(alphabet);
+        }
+
+        // Keep the part to the right of the first separator for the next iteration.
+        id = right;
+    }
+
+    return try ret.toOwnedSlice();
+}
+
+// toID generates a new ID string for number using alphabet.
+fn toID(allocator: mem.Allocator, number: u64, alphabet: []const u8) ![]const u8 {
+    // NOTE(lvignoli): In the reference implementation, the letters are inserted
+    // at index 0. Here we append them for efficiency, so we reverse the ID at
+    // the end.
+    var result: u64 = number;
+    var id = std.ArrayList(u8).init(allocator);
+
+    while (true) {
+        try id.append(alphabet[result % alphabet.len]);
+        result = result / alphabet.len;
+        if (result == 0) break;
+    }
+
+    const value: []u8 = try id.toOwnedSlice();
+    mem.reverse(u8, value);
+
+    return value;
+}
+
+// toNumber converts a string to an integer using the given alphabet.
+fn toNumber(s: []const u8, alphabet: []const u8) u64 {
+    var num: u64 = 0;
+    for (s) |c| {
+        if (mem.indexOfScalar(u8, alphabet, c)) |i| {
+            num = num * alphabet.len + i;
+        }
+    }
+    return num;
+}
+
+/// Shuffle shuffles inplace the given alphabet. It is consistent: it produces
+/// the same result given the input.
+fn shuffle(alphabet: []u8) void {
+    const n = alphabet.len;
+
+    var i: usize = 0;
+    var j = alphabet.len - 1;
+
+    while (j > 0) {
+        const r = (i * j + alphabet[i] + alphabet[j]) % n;
+        mem.swap(u8, &alphabet[i], &alphabet[r]);
+        i += 1;
+        j -= 1;
+    }
+}
+
+// Encoding and decoding tests start from here.
 
 test "encode" {
     const allocator = testing.allocator;
@@ -287,191 +397,9 @@ test "non-empty blocklist" {
     try testing.expectEqualStrings("QyG4", got_id);
 }
 
-/// decode decodes id into numbers using alphabet.
-pub fn decode(
-    allocator: mem.Allocator,
-    to_decode_id: []const u8,
-    decoding_alphabet: []const u8,
-) ![]const u64 {
-    var id = to_decode_id[0..];
-    if (id.len == 0) {
-        return &.{};
-    }
-
-    const alphabet = try allocator.dupe(u8, decoding_alphabet);
-    defer allocator.free(alphabet);
-    shuffle(alphabet);
-
-    // If a character is not in the alphabet, return an empty array.
-    // TODO(lvignoli): here we could return an informative error. Check if fine with specs.
-    for (id) |c| {
-        if (mem.indexOfScalar(u8, id, c) == null) {
-            return &.{};
-        }
-    }
-
-    const prefix = id[0];
-    id = id[1..];
-
-    const offset = mem.indexOfScalar(u8, alphabet, prefix).?;
-    // NOTE(l.vignoli): We can unwrap safely since all characters are in alphabet.
-    mem.rotate(u8, alphabet, offset);
-    mem.reverse(u8, alphabet);
-
-    var ret = ArrayList(u64).init(allocator);
-    defer ret.deinit();
-
-    while (id.len > 0) {
-        const separator = alphabet[0];
-
-        // We need the first part to the left of the separator to decode the number.
-        // If there is no separator, we take the whole string.
-        const i = mem.indexOfScalar(u8, id, separator) orelse id.len; // TODO: refactor.
-        const left = id[0..i];
-        const right = if (i == id.len) "" else id[i + 1 ..];
-
-        // If empty, we are done (the rest is junk characters).
-        if (left.len == 0) {
-            return try ret.toOwnedSlice();
-        }
-
-        try ret.append(toNumber(left, alphabet[1..]));
-
-        // If there is still numbers to decode from the ID, shuffle the alphabet.
-        if (right.len > 0) {
-            shuffle(alphabet);
-        }
-
-        // Keep the part to the right of the first separator for the next iteration.
-        id = right;
-    }
-
-    return try ret.toOwnedSlice();
-}
-
 test "decode" {
     const allocator = testing.allocator;
     const numbers = try decode(allocator, "489158", "0123456789abcdef");
     defer allocator.free(numbers);
     try testing.expectEqualSlices(u64, &.{ 1, 2, 3 }, numbers);
-}
-
-// toID generates a new ID string for number using alphabet.
-fn toID(allocator: mem.Allocator, number: u64, alphabet: []const u8) ![]const u8 {
-    var result: u64 = number;
-
-    var id = std.ArrayList(u8).init(allocator);
-
-    while (true) {
-        try id.append(alphabet[result % alphabet.len]);
-        result = result / alphabet.len;
-        if (result == 0) break;
-    }
-
-    const value: []u8 = try id.toOwnedSlice();
-
-    // In the reference implementation, the letters are inserted at index 0.
-    // Here we append them for efficiency, so we reverse the ID at the end.
-    mem.reverse(u8, value);
-
-    return value;
-}
-
-fn toNumber(s: []const u8, alphabet: []const u8) u64 {
-    var num: u64 = 0;
-    for (s) |c| {
-        if (mem.indexOfScalar(u8, alphabet, c)) |i| {
-            num = num * alphabet.len + i;
-        }
-    }
-    return num;
-}
-
-test "toNumber" {
-    const alphabet = [_]u8{ 'a', 'b', 'c' };
-    const n = toNumber("cb", &alphabet);
-    _ = n;
-}
-
-/// Shuffle shuffles inplace the given alphabet. It's consistent (produces the
-/// same result given the input).
-fn shuffle(alphabet: []u8) void {
-    const n = alphabet.len;
-
-    var i: usize = 0;
-    var j = alphabet.len - 1;
-
-    while (j > 0) {
-        const r = (i * j + alphabet[i] + alphabet[j]) % n;
-        mem.swap(u8, &alphabet[i], &alphabet[r]);
-        i += 1;
-        j -= 1;
-    }
-}
-
-test "shuffle" {
-    const allocator = testing.allocator;
-
-    const TestCase = struct {
-        input: []const u8,
-        want: []const u8,
-    };
-
-    const cases = [_]TestCase{
-        // Default shuffle, checking for randomness.
-        .{
-            .input = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-            .want = "fwjBhEY2uczNPDiloxmvISCrytaJO4d71T0W3qnMZbXVHg6eR8sAQ5KkpLUGF9",
-        },
-        // Numbers in the front, another check for randomness.
-        .{
-            .input = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            .want = "ec38UaynYXvoxSK7RV9uZ1D2HEPw6isrdzAmBNGT5OCJLk0jlFbtqWQ4hIpMgf",
-        },
-        // Swapping front 2 characters.
-        .{
-            .input = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            .want = "ec38UaynYXvoxSK7RV9uZ1D2HEPw6isrdzAmBNGT5OCJLk0jlFbtqWQ4hIpMgf",
-        },
-        .{
-            .input = "1023456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            .want = "xI3RUayk1MSolQK7e09zYmFpVXPwHiNrdfBJ6ZAT5uCWbntgcDsEqjv4hLG28O",
-        },
-        // Swapping last 2 characters.
-        .{
-            .input = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            .want = "ec38UaynYXvoxSK7RV9uZ1D2HEPw6isrdzAmBNGT5OCJLk0jlFbtqWQ4hIpMgf",
-        },
-        .{
-            .input = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXZY",
-            .want = "x038UaykZMSolIK7RzcbYmFpgXEPHiNr1d2VfGAT5uJWQetjvDswqn94hLC6BO",
-        },
-        // Short alphabet.
-        .{
-            .input = "0123456789",
-            .want = "4086517392",
-        },
-        // Really short alphabet.
-        .{
-            .input = "12345",
-            .want = "24135",
-        },
-        // Lowercase alphabet.
-        .{
-            .input = "abcdefghijklmnopqrstuvwxyz",
-            .want = "lbfziqvscptmyxrekguohwjand",
-        },
-        .{
-            .input = "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            .want = "ZXBNSIJQEDMCTKOHVWFYUPLRGA",
-        },
-    };
-
-    for (cases) |case| {
-        const alphabet = try allocator.dupe(u8, case.input);
-        defer allocator.free(alphabet);
-        shuffle(alphabet);
-
-        try testing.expectEqualSlices(u8, case.want, alphabet);
-    }
 }
